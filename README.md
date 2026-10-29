@@ -17,7 +17,22 @@ L'architecture est conçue selon les standards stricts d'ingénierie logicielle 
 - **Suite de tests automatisés (`test_regles_rendez_vous.py`) :** couverture exhaustive de l'ensemble des tickets d'incidents (y compris le ticket conforme), des cas de bornes et des attaques par injection ou données hostiles (fuzzing).
 - **Version témoin d'anomalies (`version_boguee.py`) :** module reproduisant fidèlement les anomalies observées en production pour démontrer objectivement l'échec des tests avant correction.
 - **Script d'extraction SQL d'impact (`requetes.sql`) :** requêtes d'exploitation compatibles SQLite, PostgreSQL et MySQL pour cibler les usagers impactés et corriger les incohérences en base.
-- **Rapport d'intervention officiel (`Rapport_Intervention_TMA_ASIN_Officiel.docx` et `Rapport_Intervention_TMA_ASIN_Officiel.pdf`) :** document de synthèse institutionnel calqué sur le gabarit exact du sujet officiel ASIN (typographie Montserrat, marges et tableaux normés), décliné en formats Word et PDF vectoriel pour une consultation universelle et immédiate.
+- **Rapports d'intervention officiels ([PDF vectoriel](docs/Rapport_Intervention_TMA_ASIN_Officiel.pdf) et [Word DOCX](docs/Rapport_Intervention_TMA_ASIN_Officiel.docx)) :** livrables documentaires situés dans le dossier `docs/`, calqués fidèlement sur le gabarit et la typographie Montserrat du sujet officiel ASIN.
+
+### Structure et arborescence du dépôt
+```text
+etude-cas-tma-asin-2026/
+├── .gitignore
+├── README.md                      # Guide d'évaluation, diagnostics et résultats SQL
+├── regles_rendez_vous.py          # Module pur de règles métier (standard library)
+├── test_regles_rendez_vous.py     # 58 tests automatisés (unitaires, bornes, fuzzing, SQLite)
+├── version_boguee.py              # Reproduction fidèle des anomalies pour preuve différentielle
+├── requetes.sql                   # Requêtes SQL d'impact (3 obligatoires + 4 bonus)
+├── base_rendez_vous.sql           # Export officiel fourni pour autonomie des tests
+└── docs/                          # Dossier officiel des livrables institutionnels
+    ├── Rapport_Intervention_TMA_ASIN_Officiel.docx   # Rapport Word (charte Montserrat ASIN)
+    └── Rapport_Intervention_TMA_ASIN_Officiel.pdf    # Rapport PDF vectoriel haute définition
+```
 
 ### Machine à états finis du cycle de vie des rendez-vous
 ```mermaid
