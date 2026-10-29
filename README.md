@@ -17,7 +17,7 @@ L'architecture est conçue selon les standards stricts d'ingénierie logicielle 
 - **Suite de tests automatisés (`test_regles_rendez_vous.py`) :** couverture exhaustive de l'ensemble des tickets d'incidents (y compris le ticket conforme), des cas de bornes et des attaques par injection ou données hostiles (fuzzing).
 - **Version témoin d'anomalies (`version_boguee.py`) :** module reproduisant fidèlement les anomalies observées en production pour démontrer objectivement l'échec des tests avant correction.
 - **Script d'extraction SQL d'impact (`requetes.sql`) :** requêtes d'exploitation compatibles SQLite, PostgreSQL et MySQL pour cibler les usagers impactés et corriger les incohérences en base.
-- **Rapport d'intervention formel (`Rapport_Intervention_TMA_ASIN_Freddy_ANATO.docx`) :** document de synthèse institutionnel au format Word conforme aux standards de rédaction professionnelle.
+- **Rapport d'intervention officiel (`Rapport_Intervention_TMA_ASIN_Officiel.docx` et `Rapport_Intervention_TMA_ASIN_Officiel.pdf`) :** document de synthèse institutionnel calqué sur le gabarit exact du sujet officiel ASIN (typographie Montserrat, marges et tableaux normés), décliné en formats Word et PDF vectoriel pour une consultation universelle et immédiate.
 
 ### Machine à états finis du cycle de vie des rendez-vous
 ```mermaid
