@@ -44,6 +44,23 @@ from regles_rendez_vous import (
 )
 
 
+def est_jour_ouvre(date_heure: datetime) -> bool:
+    # BUG TMA-101 : seul le dimanche (6) est ferme, le samedi (5) est considere ouvre a tort
+    return date_heure.weekday() != 6
+
+
+def est_creneau_valide(date_heure: datetime) -> bool:
+    # BUG BONUS : controle laxiste autorisant les rendez-vous jusqu'a 16h30 au lieu de 15h30
+    return time(8, 0) <= date_heure.time() <= time(16, 30)
+
+
+def valider_npi(npi: Any) -> Optional[Resultat]:
+    # BUG BONUS : absence de controle sur la longueur de 10 chiffres (accepte 11 et 12 chiffres)
+    if not isinstance(npi, str) or not npi.isdigit():
+        return _refus(400, MSG_NPI)
+    return None
+
+
 def controler_prise(
     npi: Any,
     service: Any,

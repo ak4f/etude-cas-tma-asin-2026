@@ -1,19 +1,25 @@
 -- ==============================================================================
--- REQUETES D'IMPACT SUR L'EXPORT DE LA BASE DE DONNEES (base_rendez_vous.sql)
--- Epreuve pratique TMA Full Stack - ASIN 2026
+-- REQUÊTES D'IMPACT SUR L'EXPORT DE LA BASE DE DONNÉES (base_rendez_vous.sql)
+-- Épreuve pratique TMA Full Stack - ASIN 2026
 -- Auteur : ANATO Kodjo Freddy (fredak946@gmail.com)
 --
--- Date de reference de l'export : vendredi 20 novembre 2026 a 18 h 00 (heure du Benin).
--- Les requetes ci-dessous sont testees et compatibles SQLite, PostgreSQL et MySQL.
--- ==============================================================================
-
-
--- ==============================================================================
--- REQUETE 1 : Rendez-vous confirmes a venir pris un samedi ou un dimanche
--- Objectif : identifier les usagers a prevenir d'urgence avant leur deplacement.
+-- Date de référence de l'export : vendredi 20 novembre 2026 à 18 h 00 (heure du Bénin, GMT+1).
+-- Les requêtes ci-dessous sont testées et compatibles SQLite, PostgreSQL et MySQL.
 --
--- Resultat attendu sur l'export : 5 rendez-vous trouves (tous des samedis).
--- IDs concernes : 680, 730, 834, 857, 874.
+-- MÉTRIQUES GLOBALES DE CADRAGE (AUDIT DE LA BASE) :
+-- - Total des rendez-vous enregistrés : 889 (307 CNI, 296 PASSEPORT, 286 PERMIS).
+-- - Total des événements d'historique : 757 mutations d'état.
+-- - Usagers uniques recensés (NPI distincts) : 761 citoyens.
+-- - Usagers ayant pris plus d'un rendez-vous : 103 citoyens.
+-- ==============================================================================
+
+
+-- ==============================================================================
+-- REQUÊTE 1 : Rendez-vous confirmés à venir pris un samedi ou un dimanche
+-- Objectif : identifier les usagers à prévenir d'urgence avant leur déplacement.
+--
+-- Résultat attendu sur l'export : 5 rendez-vous trouvés (tous des samedis).
+-- IDs concernés : 680, 730, 834, 857, 874.
 -- ==============================================================================
 
 -- Syntaxe SQLite (strftime '%w' : 0 = dimanche, 6 = samedi) :
@@ -51,13 +57,13 @@ ORDER BY r.date_heure ASC;
 
 
 -- ==============================================================================
--- REQUETE 2 : Creneaux comptant plus de 3 rendez-vous non annules
--- Objectif : detecter les surcharges de guichets (capacite maximale de 3 usagers).
+-- REQUÊTE 2 : Créneaux comptant plus de 3 rendez-vous non annulés
+-- Objectif : détecter les surcharges de guichets (capacité maximale de 3 usagers).
 --
--- Resultat attendu sur l'export : 3 creneaux en surcharge (4 usagers chacun).
--- 1. 2026-10-22 10:30:00 (RDV 502, 511, 517, 519) - passe
--- 2. 2026-11-10 09:00:00 (RDV 632, 644, 681, 697) - ticket TMA-102
--- 3. 2026-11-24 14:00:00 (RDV 728, 750, 763, 783) - CRENEAU FUTUR A PREVENIR !
+-- Résultat attendu sur l'export : 3 créneaux en surcharge (4 usagers chacun).
+-- 1. 2026-10-22 10:30:00 (RDV n° 502, 511, 517, 519) - passé.
+-- 2. 2026-11-10 09:00:00 (RDV n° 632, 644, 681, 697) - ticket TMA-102.
+-- 3. 2026-11-24 14:00:00 (RDV n° 728, 750, 763, 783) - CRÉNEAU FUTUR À PRÉVENIR !
 -- ==============================================================================
 
 SELECT
@@ -70,20 +76,20 @@ GROUP BY date_heure
 HAVING COUNT(*) > 3
 ORDER BY date_heure ASC;
 
--- Variante PostgreSQL / MySQL (remplacer GROUP_CONCAT par STRING_AGG en PostgreSQL) :
--- PostgreSQL : STRING_AGG(id::text, ', ')
--- MySQL : GROUP_CONCAT(id ORDER BY id SEPARATOR ', ')
+-- Variante PostgreSQL :
+-- SELECT date_heure AS creneau, COUNT(*) AS total_usagers, STRING_AGG(id::text, ', ') AS liste_ids_rdv
+-- FROM rendez_vous WHERE statut != 'annule' GROUP BY date_heure HAVING COUNT(*) > 3 ORDER BY date_heure ASC;
 
 
 -- ==============================================================================
--- REQUETE 3 : Rendez-vous passes du statut "annule" a un autre statut
--- Objectif : tracer les mutations illegales depuis un statut terminal.
+-- REQUÊTE 3 : Rendez-vous passés du statut "annulé" à un autre statut
+-- Objectif : tracer les mutations illégales depuis un statut terminal définitif.
 --
--- Resultat attendu sur l'export : 4 rendez-vous violant la definitivite des statuts.
--- 1. RDV 208 : modifie le 2026-10-07 10:20 par AG-01 (annule -> honore)
--- 2. RDV 231 : modifie le 2026-10-15 10:26 par AG-02 (annule -> honore)
--- 3. RDV 262 : modifie le 2026-10-29 10:21 par AG-03 (annule -> absent)
--- 4. RDV 292 : modifie le 2026-11-12 10:13 par AG-04 (annule -> honore) - ticket TMA-105
+-- Résultat attendu sur l'export : 4 rendez-vous violant la définitivité des statuts.
+-- 1. RDV n° 208 : modifié le 2026-10-07 10:20 par AG-01 (annulé -> honoré).
+-- 2. RDV n° 231 : modifié le 2026-10-15 10:26 par AG-02 (annulé -> honoré).
+-- 3. RDV n° 262 : modifié le 2026-10-29 10:21 par AG-03 (annulé -> absent).
+-- 4. RDV n° 292 : modifié le 2026-11-12 10:13 par AG-04 (annulé -> honoré) - ticket TMA-105.
 -- ==============================================================================
 
 SELECT
@@ -104,11 +110,11 @@ ORDER BY h.modifie_le ASC;
 
 
 -- ==============================================================================
--- REQUETES BONUS : ANOMALIES NON DOCUMENTEES IDENTIFIEES DANS L'EXPORT
+-- REQUÊTES BONUS : ANOMALIES NON DOCUMENTÉES IDENTIFIÉES DANS L'EXPORT
 -- ==============================================================================
 
--- BONUS 1 : Rendez-vous programmes hors grille horaire (> 15:30)
--- Resultat : 3 rendez-vous, dont le n° 842 programme dans le futur a 16:00 !
+-- BONUS 1 : Rendez-vous programmés hors grille horaire (> 15:30)
+-- Résultat : 3 rendez-vous, dont le n° 842 programmé dans le futur à 16:00 !
 SELECT
     id,
     npi,
@@ -121,8 +127,8 @@ WHERE strftime('%H:%M', date_heure) NOT BETWEEN '08:00' AND '15:30'
 ORDER BY date_heure ASC;
 
 
--- BONUS 2 : NPI de longueur invalide (differente d'exactement 10 chiffres)
--- Resultat : RDV 459 (11 chiffres) et RDV 642 (12 chiffres, saisie double 11).
+-- BONUS 2 : NPI de longueur invalide (différente d'exactement 10 chiffres)
+-- Résultat : RDV n° 459 (11 chiffres) et RDV n° 642 (12 chiffres, saisie double 11).
 SELECT
     id,
     npi,
@@ -136,8 +142,8 @@ WHERE LENGTH(npi) != 10
 ORDER BY id ASC;
 
 
--- BONUS 3 : Rendez-vous passes restes au statut "confirme" (rendez-vous fantomes)
--- Resultat : 3 rendez-vous passes (samedis 31/10 et 14/11), jamais honores ni absents.
+-- BONUS 3 : Rendez-vous passés restés au statut "confirmé" (rendez-vous fantômes)
+-- Résultat : 3 rendez-vous passés (samedis 31/10 et 14/11), jamais clôturés.
 SELECT
     id,
     npi,
@@ -151,8 +157,8 @@ WHERE statut = 'confirme'
 ORDER BY date_heure ASC;
 
 
--- BONUS 4 : Usagers ayant reserve un second rendez-vous alors qu'un etait deja a venir
--- Resultat : 51 paires de rendez-vous identifiees dans l'historique.
+-- BONUS 4 : Usagers ayant réservé un second rendez-vous alors qu'un était déjà à venir
+-- Résultat : 51 paires de rendez-vous identifiées dans l'historique (47 usagers distincts).
 SELECT
     a.id AS rdv_initial_id,
     b.id AS rdv_second_id,

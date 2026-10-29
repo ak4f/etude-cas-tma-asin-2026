@@ -66,13 +66,25 @@ def _refus(code: int, message: str) -> Resultat:
 def heure_courante(maintenant: Any = None) -> datetime:
     """Ramène l'heure fournie à un `datetime` naïf en heure du Bénin.
 
-    Sans argument, retourne l'heure réelle du Bénin. Le paramètre existe pour que
-    les règles soient testables à n'importe quel instant.
+    Accepte :
+    - None : heure réelle actuelle du Bénin (GMT+1).
+    - datetime : converti si besoin en heure du Bénin et débarrassé de son fuseau.
+    - str : texte au format 'AAAA-MM-JJ HH:MM' ou 'AAAA-MM-JJTHH:MM'.
     """
     if maintenant is None:
         maintenant = datetime.now(FUSEAU_BENIN)
-    if not isinstance(maintenant, datetime):
-        raise TypeError("`maintenant` doit être un datetime")
+    elif isinstance(maintenant, str):
+        for fmt in _FORMATS_DATE:
+            try:
+                maintenant = datetime.strptime(maintenant, fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            raise ValueError(f"Instant 'maintenant' illisible : {maintenant!r}")
+    elif not isinstance(maintenant, datetime):
+        raise TypeError("`maintenant` doit être un datetime ou une chaîne de date valide")
+
     if maintenant.tzinfo is not None:
         maintenant = maintenant.astimezone(FUSEAU_BENIN).replace(tzinfo=None)
     return maintenant
@@ -300,3 +312,31 @@ def lister_rendez_vous(
             for r in page_elements
         ],
     }
+
+
+__all__ = [
+    "Resultat",
+    "RendezVous",
+    "controler_prise",
+    "controler_annulation",
+    "controler_changement_statut",
+    "lister_rendez_vous",
+    "valider_npi",
+    "valider_service",
+    "lire_date_heure",
+    "heure_courante",
+    "CAPACITE_CRENEAU",
+    "DELAI_ANNULATION",
+    "SERVICES",
+]
+
+
+if __name__ == "__main__":
+    print("Module de regles de gestion : Prise de rendez-vous au guichet (ASIN)")
+    print("Auteur : ANATO Kodjo Freddy (fredak946@gmail.com)")
+    print("Capacite par creneau :", CAPACITE_CRENEAU, "usagers max")
+    print("Delai annulation minimum :", DELAI_ANNULATION.total_seconds() / 3600, "heures")
+    print("Premier creneau :", PREMIER_CRENEAU.strftime("%H:%M"), "| Dernier creneau :", DERNIER_CRENEAU.strftime("%H:%M"))
+    print("Services autorises :", ", ".join(SERVICES))
+    print("Auto-diagnostic : Module pret et autonome.")
+

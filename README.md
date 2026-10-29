@@ -19,19 +19,52 @@ L'architecture est conçue selon les standards stricts d'ingénierie logicielle 
 - **Script d'extraction SQL d'impact (`requetes.sql`) :** requêtes d'exploitation compatibles SQLite, PostgreSQL et MySQL pour cibler les usagers impactés et corriger les incohérences en base.
 - **Rapport d'intervention formel (`Rapport_Intervention_TMA_ASIN_Freddy_ANATO.docx`) :** document de synthèse institutionnel au format Word conforme aux standards de rédaction professionnelle.
 
+### Machine à états finis du cycle de vie des rendez-vous
+```mermaid
+stateDiagram-v2
+    [*] --> confirme : Prise de rendez-vous (POST /api/rendez-vous)
+    confirme --> annule : Annulation usager (>= 24 h avant)
+    confirme --> honore : Cloture agent (usager present)
+    confirme --> absent : Cloture agent (usager absent)
+    annule --> [*] : Statut terminal definitif (cloture)
+    honore --> [*] : Statut terminal definitif (cloture)
+    absent --> [*] : Statut terminal definitif (cloture)
+```
+
 ---
 
 ## 2. INSTRUCTIONS D'EXÉCUTION DES TESTS
 
 Le projet repose sur la bibliothèque standard Python 3 (Python 3.10+). Aucune dépendance tierce n'est requise.
 
-### 2.1 Lancement de la suite de tests officielle (100 % de succès)
+### 2.1 Matrice de couverture des 58 tests automatisés
+
+| Catégorie de tests | Classe de test | Nb tests | Couverture fonctionnelle |
+| :--- | :--- | :---: | :--- |
+| **Saisie et NPI (TMA-103)** | `TestTMA103SaisieNPI` | 9 | Format NPI regex, services autorisés, format ISO, ordre des contrôles |
+| **Jours ouvrés (TMA-101)** | `TestTMA101FermetureWeekEnd` | 4 | Rejet samedi et dimanche, balayage 8 semaines, acceptation jours ouvrés |
+| **Période et Grille horaire** | `TestDatePasseeEtGrille` | 7 | Créneaux 08:00 à 15:30 par 30 min, rejet des dates passées, fuseau Bénin |
+| **Capacité créneau (TMA-102)** | `TestTMA102CapaciteCreneau` | 8 | Borne max 3 usagers, libération de place par annulation, multi-services |
+| **Unicité RDV futur (TMA-107)** | `TestTMA107ConformeUnSeulRendezVousAVenir` | 6 | Conforme : un seul RDV futur tous services confondus |
+| **Délai annulation (TMA-104)** | `TestTMA104Annulation` | 6 | Délai vectoriel >= 24 h, bornes 24h00 et 23h59, non annulable |
+| **Statuts définitifs (TMA-105)** | `TestTMA105StatutsDefinitifs` | 5 | Clôture irréversible depuis annulé/honoré/absent, contrôle 400 |
+| **Tri et Pagination (TMA-106)** | `TestTMA106TriEtPagination` | 4 | Prochain RDV en tête, tri décroissant natif, découpage par pages de 10 |
+| **Robustesse et Fuzzing** | `TestRobusteEtFuzzing` | 3 | Entrées hostiles (None, int, overflow, inject), zéro crash |
+| **Intégration Base Réelle** | `TestIntegrationBaseReelle` | 6 | Rejeu direct sur les 889 lignes de `base_rendez_vous.sql` via SQLite |
+| **TOTAL** | **10 classes de tests** | **58 tests** | **100 % de succès (temps d'exécution : 0.05 s)** |
+
+### 2.2 Lancement de la suite de tests officielle (100 % de succès)
 ```bash
 python -m unittest -v test_regles_rendez_vous.py
 ```
-*Résultat obtenu :* 52 tests exécutés avec succès en 0.015 seconde.
+*Résultat obtenu :* 58 tests exécutés avec succès en moins de 0.05 seconde.
 
-### 2.2 Démonstration de la reproduction des anomalies sur la version boguée
+### 2.3 Exécution des tests de documentation (doctest)
+```bash
+python -m doctest -v regles_rendez_vous.py
+```
+
+### 2.4 Démonstration de la reproduction des anomalies sur la version boguée
 Pour vérifier l'exigence n° 4 de l'énoncé (« Chaque test rejoue le cas décrit et échouerait avec le comportement signalé ») :
 
 *Sous Linux / macOS / Git Bash :*
