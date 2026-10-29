@@ -32,6 +32,9 @@ TAILLE_PAGE = 10
 MSG_NPI = "Le NPI doit comporter exactement 10 chiffres."
 MSG_SERVICE = "Service inconnu : choisissez PASSEPORT, CNI ou PERMIS."
 MSG_DATE_ILLISIBLE = "Date et heure invalides (format attendu : AAAA-MM-JJTHH:MM)."
+MSG_PASSE = "Impossible de prendre un rendez-vous dans le passé."
+MSG_WEEK_END = "Le centre est fermé le week-end."
+MSG_HORS_GRILLE = "Créneau invalide : de 08:00 à 15:30, toutes les 30 minutes."
 
 _RE_NPI = re.compile(r"[0-9]{10}")
 _RE_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}")
@@ -94,6 +97,19 @@ def lire_date_heure(texte: Any) -> Optional[datetime]:
         return None
 
 
+def est_jour_ouvre(date_heure: datetime) -> bool:
+    """Le centre reçoit du lundi au vendredi. `weekday()` vaut 0 pour lundi, 5 pour
+    samedi et 6 pour dimanche : le samedi et le dimanche sont donc tous deux fermés."""
+    return date_heure.weekday() <= 4
+
+
+def est_creneau_valide(date_heure: datetime) -> bool:
+    """Créneaux de 30 minutes, de 08:00 (premier) à 15:30 (dernier) inclus."""
+    if date_heure.minute not in (0, 30):
+        return False
+    return PREMIER_CRENEAU <= date_heure.time() <= DERNIER_CRENEAU
+
+
 def controler_prise(
     npi: Any,
     service: Any,
@@ -101,13 +117,21 @@ def controler_prise(
     rendez_vous_existants: Iterable[Any] = (),
     maintenant: Any = None,
 ) -> Resultat:
-    """Contrôle une prise de rendez-vous, dans l'ordre du tableau de l'énoncé."""
+    """Contrôle une prise de rendez-vous, dans l'ordre du tableau de l'énoncé :
+    NPI, service, format de date, passé, week-end, grille horaire."""
     refus = valider_npi(npi)
     if refus is not None:
         return refus
     refus = valider_service(service)
     if refus is not None:
         return refus
-    if lire_date_heure(date_heure) is None:
+    debut = lire_date_heure(date_heure)
+    if debut is None:
         return _refus(400, MSG_DATE_ILLISIBLE)
+    if debut < heure_courante(maintenant):
+        return _refus(409, MSG_PASSE)
+    if not est_jour_ouvre(debut):
+        return _refus(409, MSG_WEEK_END)
+    if not est_creneau_valide(debut):
+        return _refus(409, MSG_HORS_GRILLE)
     return Resultat(True, 201)

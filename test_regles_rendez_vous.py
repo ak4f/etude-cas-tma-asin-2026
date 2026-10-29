@@ -116,5 +116,87 @@ class TestTMA103SaisieNPI(OutilsTest):
         self.assertRefus(self.prise("0614253647", service="X", date="n'importe quoi"), 400, R.MSG_SERVICE)
 
 
+class TestTMA101FermetureWeekEnd(OutilsTest):
+    """TMA-101 : le samedi 14 novembre ne doit pas être réservable (centre fermé)."""
+
+    MAINT = dt("2026-11-09 23:59")  # instant de création du rendez-vous n° 742
+
+    def prise(self, date):
+        return R.controler_prise("0614253647", "PASSEPORT", date, [], self.MAINT)
+
+    def test_trace_du_ticket_samedi_14_novembre(self):
+        res = self.prise("2026-11-14T10:00")
+        self.assertRefus(res, 409, "Le centre est fermé le week-end.")
+
+    def test_dimanche_refuse(self):
+        self.assertRefus(self.prise("2026-11-15T10:00"), 409, R.MSG_WEEK_END)
+
+    def test_du_lundi_au_vendredi_accepte(self):
+        for jour in ("2026-11-13", "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"):
+            with self.subTest(jour=jour):
+                self.assertAccepte(self.prise(jour + "T10:00"))
+
+    def test_tous_les_samedis_et_dimanches_refuses(self):
+        jour = datetime(2026, 11, 14)
+        for i in range(0, 56):
+            d = jour + timedelta(days=i)
+            if d.weekday() >= 5:
+                with self.subTest(jour=d.date()):
+                    self.assertRefus(self.prise(d.strftime("%Y-%m-%dT10:00")), 409, R.MSG_WEEK_END)
+
+
+class TestDatePasseeEtGrille(OutilsTest):
+    """Règles de la grille horaire et du passé (anomalie bonus : rendez-vous à 16:00)."""
+
+    MAINT = dt("2026-11-20 18:00")
+
+    def prise(self, date, maint=None):
+        return R.controler_prise("0614253647", "CNI", date, [], maint or self.MAINT)
+
+    def test_date_passee_refusee(self):
+        for date in ("2026-11-19T10:00", "2026-11-20T17:30", "2026-01-05T08:30"):
+            with self.subTest(date=date):
+                self.assertRefus(
+                    self.prise(date), 409, "Impossible de prendre un rendez-vous dans le passé."
+                )
+
+    def test_passe_controle_avant_le_week_end(self):
+        # Samedi passé : le motif « passé » est celui du tableau le plus prioritaire.
+        self.assertRefus(self.prise("2026-11-14T10:00"), 409, R.MSG_PASSE)
+
+    def test_creneau_a_venir_accepte(self):
+        self.assertAccepte(self.prise("2026-11-23T08:00"))
+
+    def test_premier_et_dernier_creneau_acceptes(self):
+        for heure in ("08:00", "15:30"):
+            with self.subTest(heure=heure):
+                self.assertAccepte(self.prise("2026-11-23T" + heure))
+
+    def test_hors_grille_refuse(self):
+        # 16:00 et 16:30 existent dans l'export (rendez-vous n° 490, 698 et 842).
+        for heure in ("07:30", "07:59", "08:15", "08:45", "12:10", "15:45", "16:00", "16:30", "18:00", "00:00"):
+            with self.subTest(heure=heure):
+                self.assertRefus(
+                    self.prise("2026-11-23T" + heure),
+                    409,
+                    "Créneau invalide : de 08:00 à 15:30, toutes les 30 minutes.",
+                )
+
+    def test_toute_la_grille_acceptee(self):
+        for h in range(8, 16):
+            for m in (0, 30):
+                if (h, m) <= (15, 30):
+                    with self.subTest(h=h, m=m):
+                        self.assertAccepte(self.prise(f"2026-11-23T{h:02d}:{m:02d}"))
+
+    def test_heure_avec_fuseau_convertie_en_heure_du_benin(self):
+        # 17:00 UTC le 20/11 = 18:00 à Cotonou : le créneau du lendemain matin reste à venir.
+        from datetime import timezone
+
+        utc = datetime(2026, 11, 20, 17, 0, tzinfo=timezone.utc)
+        self.assertRefus(self.prise("2026-11-20T17:30", maint=utc), 409, R.MSG_PASSE)
+        self.assertAccepte(self.prise("2026-11-23T10:00", maint=utc))
+
+
 if __name__ == "__main__":
     unittest.main()
