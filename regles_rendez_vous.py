@@ -35,6 +35,8 @@ MSG_DATE_ILLISIBLE = "Date et heure invalides (format attendu : AAAA-MM-JJTHH:MM
 MSG_PASSE = "Impossible de prendre un rendez-vous dans le passé."
 MSG_WEEK_END = "Le centre est fermé le week-end."
 MSG_HORS_GRILLE = "Créneau invalide : de 08:00 à 15:30, toutes les 30 minutes."
+MSG_DEJA_A_VENIR = "Vous avez déjà un rendez-vous à venir."
+MSG_COMPLET = "Ce créneau est complet."
 
 _RE_NPI = re.compile(r"[0-9]{10}")
 _RE_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}")
@@ -110,6 +112,57 @@ def est_creneau_valide(date_heure: datetime) -> bool:
     return PREMIER_CRENEAU <= date_heure.time() <= DERNIER_CRENEAU
 
 
+@dataclass(frozen=True)
+class RendezVous:
+    """Rendez-vous tel que le module le manipule (les mêmes champs que la table
+    `rendez_vous` de l'export). `statut` vaut confirme, honore, absent ou annule."""
+
+    id: Any
+    npi: str
+    service: str
+    date_heure: datetime
+    statut: str
+
+
+_FORMATS_DATE = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M")
+
+
+def lire_rendez_vous(source: Any) -> RendezVous:
+    """Accepte un `RendezVous` ou un dictionnaire (par exemple une ligne de la base).
+    `date_heure` peut être un `datetime` ou un texte `AAAA-MM-JJ HH:MM[:SS]`."""
+    if isinstance(source, RendezVous):
+        return source
+    date_heure = source["date_heure"]
+    if isinstance(date_heure, str):
+        for fmt in _FORMATS_DATE:
+            try:
+                date_heure = datetime.strptime(date_heure, fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            raise ValueError(f"date_heure illisible : {date_heure!r}")
+    return RendezVous(
+        source.get("id"), source["npi"], source["service"], date_heure, source["statut"]
+    )
+
+
+def a_un_rendez_vous_a_venir(npi: str, rendez_vous: Iterable[RendezVous], maintenant: datetime) -> bool:
+    """Un usager a un rendez-vous à venir s'il en possède un `confirme` qui n'a pas
+    encore eu lieu, quel que soit le service. Un rendez-vous annulé, honoré ou absent
+    ne compte pas, et un rendez-vous resté `confirme` dans le passé non plus."""
+    return any(
+        r.npi == npi and r.statut == "confirme" and r.date_heure >= maintenant
+        for r in rendez_vous
+    )
+
+
+def places_prises(date_heure: datetime, rendez_vous: Iterable[RendezVous]) -> int:
+    """Nombre d'usagers occupant le créneau, tous services confondus. Un rendez-vous
+    annulé libère sa place."""
+    return sum(1 for r in rendez_vous if r.date_heure == date_heure and r.statut != "annule")
+
+
 def controler_prise(
     npi: Any,
     service: Any,
@@ -118,7 +171,9 @@ def controler_prise(
     maintenant: Any = None,
 ) -> Resultat:
     """Contrôle une prise de rendez-vous, dans l'ordre du tableau de l'énoncé :
-    NPI, service, format de date, passé, week-end, grille horaire."""
+    NPI, service, format de date, passé, week-end, grille horaire, rendez-vous déjà à
+    venir, créneau plein. `rendez_vous_existants` contient les rendez-vous connus
+    (au minimum ceux de l'usager et ceux du créneau demandé)."""
     refus = valider_npi(npi)
     if refus is not None:
         return refus
@@ -128,10 +183,16 @@ def controler_prise(
     debut = lire_date_heure(date_heure)
     if debut is None:
         return _refus(400, MSG_DATE_ILLISIBLE)
-    if debut < heure_courante(maintenant):
+    instant = heure_courante(maintenant)
+    if debut < instant:
         return _refus(409, MSG_PASSE)
     if not est_jour_ouvre(debut):
         return _refus(409, MSG_WEEK_END)
     if not est_creneau_valide(debut):
         return _refus(409, MSG_HORS_GRILLE)
+    connus = [lire_rendez_vous(r) for r in rendez_vous_existants]
+    if a_un_rendez_vous_a_venir(npi, connus, instant):
+        return _refus(409, MSG_DEJA_A_VENIR)
+    if places_prises(debut, connus) >= CAPACITE_CRENEAU:
+        return _refus(409, MSG_COMPLET)
     return Resultat(True, 201)

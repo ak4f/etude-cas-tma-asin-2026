@@ -198,5 +198,100 @@ class TestDatePasseeEtGrille(OutilsTest):
         self.assertAccepte(self.prise("2026-11-23T10:00", maint=utc))
 
 
+def rv(id_, npi, service, date, statut="confirme"):
+    return {"id": id_, "npi": npi, "service": service, "date_heure": date, "statut": statut}
+
+
+class TestTMA102CapaciteCreneau(OutilsTest):
+    """TMA-102 : le créneau du mardi 10 novembre à 09:00 ne doit accueillir que 3 usagers."""
+
+    MAINT = dt("2026-11-04 23:43")  # instant de création du rendez-vous n° 697
+    CRENEAU = "2026-11-10T09:00"
+
+    def trois_rendez_vous(self):
+        # Rendez-vous n° 632, 644 et 681 de l'export, tous services confondus.
+        return [
+            rv(632, "0638958971", "PASSEPORT", "2026-11-10 09:00"),
+            rv(644, "0671968463", "CNI", "2026-11-10 09:00"),
+            rv(681, "0609394161", "PERMIS", "2026-11-10 09:00"),
+        ]
+
+    def prise(self, existants, service="PERMIS"):
+        return R.controler_prise("0620214467", service, self.CRENEAU, existants, self.MAINT)
+
+    def test_trace_du_ticket_quatrieme_usager_refuse(self):
+        res = self.prise(self.trois_rendez_vous())
+        self.assertRefus(res, 409, "Ce créneau est complet.")
+
+    def test_quatrieme_refuse_quel_que_soit_le_service(self):
+        for service in R.SERVICES:
+            with self.subTest(service=service):
+                self.assertRefus(self.prise(self.trois_rendez_vous(), service), 409, R.MSG_COMPLET)
+
+    def test_troisieme_usager_accepte(self):
+        self.assertAccepte(self.prise(self.trois_rendez_vous()[:2]))
+
+    def test_premier_usager_accepte(self):
+        self.assertAccepte(self.prise([]))
+
+    def test_un_rendez_vous_annule_libere_sa_place(self):
+        existants = self.trois_rendez_vous()
+        existants[1]["statut"] = "annule"
+        self.assertAccepte(self.prise(existants))
+
+    def test_trois_actifs_et_un_annule_refuse(self):
+        existants = self.trois_rendez_vous() + [rv(700, "0600000000", "CNI", "2026-11-10 09:00", "annule")]
+        self.assertRefus(self.prise(existants), 409, R.MSG_COMPLET)
+
+    def test_les_autres_creneaux_ne_comptent_pas(self):
+        existants = self.trois_rendez_vous() + [rv(701, "0600000001", "CNI", "2026-11-10 09:30")]
+        existants = [r for r in existants if r["id"] != 681] + [rv(702, "0600000002", "CNI", "2026-11-10 09:30")]
+        self.assertAccepte(self.prise(existants))
+
+    def test_creneau_a_quatre_dans_l_export_du_24_novembre(self):
+        # Le créneau du 24/11 à 14:00 compte déjà 4 rendez-vous (n° 728, 750, 763, 783).
+        existants = [rv(i, f"06000000{i % 100:02d}", "CNI", "2026-11-24 14:00") for i in (728, 750, 763)]
+        res = R.controler_prise("0699999999", "CNI", "2026-11-24T14:00", existants, EXPORT)
+        self.assertRefus(res, 409, R.MSG_COMPLET)
+
+
+class TestTMA107ConformeUnSeulRendezVousAVenir(OutilsTest):
+    """TMA-107 : COMPORTEMENT CONFORME. Un usager ayant déjà un rendez-vous à venir
+    ne peut pas en prendre un autre, tous services confondus (règle de la section 2)."""
+
+    NPI = "0102030405"
+
+    def existant(self, statut="confirme", date="2026-11-26 10:00"):
+        # Rendez-vous n° 800 de l'export : passeport le jeudi 26 novembre à 10:00.
+        return [rv(800, self.NPI, "PASSEPORT", date, statut)]
+
+    def prise(self, existants, service="PERMIS", date="2026-11-27T09:00"):
+        return R.controler_prise(self.NPI, service, date, existants, EXPORT)
+
+    def test_trace_du_ticket_permis_refuse_car_passeport_a_venir(self):
+        res = self.prise(self.existant())
+        self.assertRefus(res, 409, "Vous avez déjà un rendez-vous à venir.")
+
+    def test_meme_service_refuse_aussi(self):
+        self.assertRefus(self.prise(self.existant(), service="PASSEPORT"), 409, R.MSG_DEJA_A_VENIR)
+
+    def test_rendez_vous_annule_ne_bloque_pas(self):
+        self.assertAccepte(self.prise(self.existant(statut="annule")))
+
+    def test_rendez_vous_passe_ne_bloque_pas(self):
+        for statut in ("honore", "absent", "confirme"):
+            with self.subTest(statut=statut):
+                self.assertAccepte(self.prise(self.existant(statut=statut, date="2026-11-19 10:00")))
+
+    def test_rendez_vous_d_un_autre_usager_ne_bloque_pas(self):
+        autre = [rv(1, "0999999999", "PASSEPORT", "2026-11-26 10:00")]
+        self.assertAccepte(self.prise(autre))
+
+    def test_rendez_vous_deja_a_venir_controle_avant_le_creneau_plein(self):
+        pleins = [rv(i, f"06000000{i:02d}", "CNI", "2026-11-27 09:00") for i in (10, 11, 12)]
+        res = self.prise(self.existant() + pleins)
+        self.assertRefus(res, 409, R.MSG_DEJA_A_VENIR)
+
+
 if __name__ == "__main__":
     unittest.main()
