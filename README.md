@@ -22,7 +22,9 @@ L'architecture est conçue selon les standards stricts d'ingénierie logicielle 
 ### Structure et arborescence du dépôt
 ```text
 etude-cas-tma-asin-2026/
+├── .dockerignore                  # Exclusion des artefacts pour contexte Docker minimal
 ├── .gitignore
+├── Dockerfile                     # Image Python Alpine standardisee (~50 Mo) pour execution conteneurisee
 ├── README.md                      # Guide d'évaluation, diagnostics et résultats SQL
 ├── regles_rendez_vous.py          # Module pur de règles métier (standard library)
 ├── test_regles_rendez_vous.py     # 58 tests automatisés (unitaires, bornes, fuzzing, SQLite)
@@ -33,6 +35,14 @@ etude-cas-tma-asin-2026/
     ├── Rapport_Intervention_TMA_ASIN_Officiel.docx   # Rapport Word (charte Montserrat ASIN)
     └── Rapport_Intervention_TMA_ASIN_Officiel.pdf    # Rapport PDF vectoriel haute définition
 ```
+
+### 1.1 Architecture Full Stack et Clean Architecture (Intégration Laravel / FastAPI)
+Le module métier purement applicatif `regles_rendez_vous.py` respecte scrupuleusement les principes d'isolation de la *Clean Architecture* :
+- **Couche Domaine (Pure) :** Les règles d'éligibilité citoyenne, de capacité des guichets, de calcul des délais et de transition d'état sont 100 % autonomes, testables unitairement sans dépendance externe ni mock lourd.
+- **Couche Infrastructure & Web (ex. Laravel / FastAPI) :** 
+  - Un contrôleur HTTP (ex. `RendezVousController` sous Laravel) gère la validation syntaxique de la requête (`FormRequest`) et injecte l'heure courante `now()`.
+  - Le contrôleur invoque les méthodes pures du domaine (`controler_prise()`, `controler_annulation()`, `controler_changement_statut()`).
+  - En cas de succès, la persistance est déléguée au Repository de base de données. En cas de rejet métier, le contrôleur mappe directement le code HTTP (`400` ou `409`) et le libellé d'erreur officiel au format JSON.
 
 ### Machine à états finis du cycle de vie des rendez-vous
 ```mermaid
@@ -97,6 +107,20 @@ $env:REGLES_MODULE="version_boguee"; python -m unittest -v test_regles_rendez_vo
 set REGLES_MODULE=version_boguee&& python -m unittest -v test_regles_rendez_vous.py
 ```
 *Résultat obtenu :* La version boguée échoue précisément sur les 6 tickets d'anomalies (TMA-101 à TMA-106) et réussit sur le comportement conforme (TMA-107).
+
+### 2.5 Exécution conteneurisée via Docker (Optionnel)
+Pour exécuter la suite de tests dans un conteneur standardisé et isolé sans installer Python sur la machine hôte :
+
+```bash
+# Construction de l'image minimale Python 3.12 Alpine (~50 Mo)
+docker build -t tma-asin-tests .
+
+# Lancement des 58 tests automatisés
+docker run --rm tma-asin-tests
+
+# Rejeu différentiel sur la version boguée dans Docker
+docker run --rm -e REGLES_MODULE=version_boguee tma-asin-tests
+```
 
 ---
 
