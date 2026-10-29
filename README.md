@@ -17,7 +17,7 @@ L'architecture est conçue selon les standards stricts d'ingénierie logicielle 
 - **Suite de tests automatisés (`test_regles_rendez_vous.py`) :** couverture exhaustive de l'ensemble des tickets d'incidents (y compris le ticket conforme), des cas de bornes et des attaques par injection ou données hostiles (fuzzing).
 - **Version témoin d'anomalies (`version_boguee.py`) :** module reproduisant fidèlement les anomalies observées en production pour démontrer objectivement l'échec des tests avant correction.
 - **Script d'extraction SQL d'impact (`requetes.sql`) :** requêtes d'exploitation compatibles SQLite, PostgreSQL et MySQL pour cibler les usagers impactés et corriger les incohérences en base.
-- **Rapports d'intervention officiels ([PDF vectoriel](docs/Rapport_Intervention_TMA_ASIN_Officiel.pdf) et [Word DOCX](docs/Rapport_Intervention_TMA_ASIN_Officiel.docx)) :** livrables documentaires situés dans le dossier `docs/`, calqués fidèlement sur le gabarit et la typographie Montserrat du sujet officiel ASIN.
+- **Rapport officiel d'intervention ([PDF vectoriel](docs/Rapport_Intervention_TMA_ASIN_Officiel.pdf)) :** livrable officiel situé dans le dossier `docs/`, calqué fidèlement sur le gabarit et la typographie Montserrat du sujet de l'ASIN.
 
 ### Structure et arborescence du dépôt
 ```text
@@ -32,17 +32,8 @@ etude-cas-tma-asin-2026/
 ├── requetes.sql                   # Requêtes SQL d'impact (3 obligatoires + 4 bonus)
 ├── base_rendez_vous.sql           # Export officiel fourni pour autonomie des tests
 └── docs/                          # Dossier officiel des livrables institutionnels
-    ├── Rapport_Intervention_TMA_ASIN_Officiel.docx   # Rapport Word (charte Montserrat ASIN)
     └── Rapport_Intervention_TMA_ASIN_Officiel.pdf    # Rapport PDF vectoriel haute définition
 ```
-
-### 1.1 Architecture Full Stack et Clean Architecture (Intégration Laravel / FastAPI)
-Le module métier purement applicatif `regles_rendez_vous.py` respecte scrupuleusement les principes d'isolation de la *Clean Architecture* :
-- **Couche Domaine (Pure) :** Les règles d'éligibilité citoyenne, de capacité des guichets, de calcul des délais et de transition d'état sont 100 % autonomes, testables unitairement sans dépendance externe ni mock lourd.
-- **Couche Infrastructure & Web (ex. Laravel / FastAPI) :** 
-  - Un contrôleur HTTP (ex. `RendezVousController` sous Laravel) gère la validation syntaxique de la requête (`FormRequest`) et injecte l'heure courante `now()`.
-  - Le contrôleur invoque les méthodes pures du domaine (`controler_prise()`, `controler_annulation()`, `controler_changement_statut()`).
-  - En cas de succès, la persistance est déléguée au Repository de base de données. En cas de rejet métier, le contrôleur mappe directement le code HTTP (`400` ou `409`) et le libellé d'erreur officiel au format JSON.
 
 ### Machine à états finis du cycle de vie des rendez-vous
 ```mermaid
