@@ -12,7 +12,7 @@ import os
 import unittest
 from datetime import datetime, timedelta
 
-R = importlib.import_module(os.environ.get("REGLES_MODULE", "regles_rendez_vous"))
+R = importlib.import_module(os.environ.get("REGLES_MODULE", "regles_rendez_vous").strip())
 
 EXPORT = datetime(2026, 11, 20, 18, 0)  # instant de l'export de la base
 
