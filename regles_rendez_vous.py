@@ -37,6 +37,14 @@ MSG_WEEK_END = "Le centre est fermé le week-end."
 MSG_HORS_GRILLE = "Créneau invalide : de 08:00 à 15:30, toutes les 30 minutes."
 MSG_DEJA_A_VENIR = "Vous avez déjà un rendez-vous à venir."
 MSG_COMPLET = "Ce créneau est complet."
+MSG_NON_ANNULABLE = "Ce rendez-vous ne peut plus être annulé."
+MSG_ANNULATION_TARDIVE = "Annulation impossible moins de 24 h avant le rendez-vous."
+MSG_STATUT_INVALIDE = "Statut invalide : honore ou absent."
+MSG_CLOTURE = "Ce rendez-vous est déjà clôturé."
+# Hors tableau de l'énoncé : rendez-vous inexistant (l'appelant n'a rien trouvé en base).
+MSG_INTROUVABLE = "Rendez-vous introuvable."
+
+STATUTS_DEMANDABLES = ("honore", "absent")
 
 _RE_NPI = re.compile(r"[0-9]{10}")
 _RE_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}")
@@ -127,23 +135,33 @@ class RendezVous:
 _FORMATS_DATE = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M")
 
 
-def lire_rendez_vous(source: Any) -> RendezVous:
+def lire_rendez_vous(source: Any) -> Optional[RendezVous]:
     """Accepte un `RendezVous` ou un dictionnaire (par exemple une ligne de la base).
-    `date_heure` peut être un `datetime` ou un texte `AAAA-MM-JJ HH:MM[:SS]`."""
+    Retourne None si l'objet est incomplet ou invalide."""
     if isinstance(source, RendezVous):
         return source
-    date_heure = source["date_heure"]
-    if isinstance(date_heure, str):
+    if not isinstance(source, dict):
+        return None
+    date_heure = source.get("date_heure")
+    if isinstance(date_heure, datetime):
+        dh = date_heure
+    elif isinstance(date_heure, str):
         for fmt in _FORMATS_DATE:
             try:
-                date_heure = datetime.strptime(date_heure, fmt)
+                dh = datetime.strptime(date_heure, fmt)
                 break
             except ValueError:
                 continue
         else:
-            raise ValueError(f"date_heure illisible : {date_heure!r}")
+            return None
+    else:
+        return None
     return RendezVous(
-        source.get("id"), source["npi"], source["service"], date_heure, source["statut"]
+        source.get("id"),
+        str(source.get("npi", "")),
+        str(source.get("service", "")),
+        dh,
+        str(source.get("statut", "")),
     )
 
 
@@ -190,9 +208,95 @@ def controler_prise(
         return _refus(409, MSG_WEEK_END)
     if not est_creneau_valide(debut):
         return _refus(409, MSG_HORS_GRILLE)
-    connus = [lire_rendez_vous(r) for r in rendez_vous_existants]
+    connus = [r for r in (lire_rendez_vous(x) for x in rendez_vous_existants) if r is not None]
     if a_un_rendez_vous_a_venir(npi, connus, instant):
         return _refus(409, MSG_DEJA_A_VENIR)
     if places_prises(debut, connus) >= CAPACITE_CRENEAU:
         return _refus(409, MSG_COMPLET)
     return Resultat(True, 201)
+
+
+def controler_annulation(rendez_vous: Any, maintenant: Any = None) -> Resultat:
+    """Contrôle l'annulation d'un rendez-vous par l'usager.
+
+    Seul un rendez-vous `confirme` peut être annulé. L'annulation est possible
+    « jusqu'à 24 heures avant l'heure prévue » : un délai d'exactement 24 h est donc
+    accepté, un délai de 23 h 59 min est refusé. Le délai se calcule comme
+    `heure du rendez-vous - heure courante`, en durée totale (jours compris).
+    """
+    rdv = lire_rendez_vous(rendez_vous)
+    if rdv is None:
+        return _refus(404, MSG_INTROUVABLE)
+    if rdv.statut != "confirme":
+        return _refus(409, MSG_NON_ANNULABLE)
+    if rdv.date_heure - heure_courante(maintenant) < DELAI_ANNULATION:
+        return _refus(409, MSG_ANNULATION_TARDIVE)
+    return Resultat(True, 200)
+
+
+def controler_changement_statut(rendez_vous: Any, nouveau_statut: Any) -> Resultat:
+    """Contrôle le passage d'un rendez-vous à « honoré » ou « absent » par un agent.
+
+    Le statut demandé est vérifié d'abord (400), puis l'état actuel du rendez-vous :
+    `honore`, `absent` et `annule` sont définitifs, seul `confirme` peut évoluer (409).
+    """
+    if not isinstance(nouveau_statut, str) or nouveau_statut not in STATUTS_DEMANDABLES:
+        return _refus(400, MSG_STATUT_INVALIDE)
+    rdv = lire_rendez_vous(rendez_vous)
+    if rdv is None:
+        return _refus(404, MSG_INTROUVABLE)
+    if rdv.statut != "confirme":
+        return _refus(409, MSG_CLOTURE)
+    return Resultat(True, 200)
+
+
+def lister_rendez_vous(
+    rendez_vous_usager: Iterable[Any],
+    page: int = 1,
+    par_page: int = TAILLE_PAGE,
+    maintenant: Any = None,
+) -> dict[str, Any]:
+    """Trie et découpe en pages les rendez-vous d'un usager.
+
+    Règle de tri (section 2) :
+    - Le prochain rendez-vous à venir (date_heure >= maintenant et non annulé)
+      est placé en tête absolue de liste.
+    - Tous les autres rendez-vous sont ensuite triés du plus récent au plus ancien
+      (ordre chronologique décroissant selon leur date_heure réelle).
+    - Le résultat est découpé par pages de `par_page` (10 par défaut).
+    """
+    instant = heure_courante(maintenant)
+    tous = [r for r in (lire_rendez_vous(x) for x in rendez_vous_usager) if r is not None]
+
+    # Identifier le prochain rendez-vous à venir (le plus proche dans le futur, non annulé)
+    a_venir = [r for r in tous if r.date_heure >= instant and r.statut != "annule"]
+    prochain = min(a_venir, key=lambda r: r.date_heure) if a_venir else None
+
+    # Les autres rendez-vous (tous sauf le prochain sélectionné)
+    autres = [r for r in tous if prochain is None or r.id != prochain.id]
+    autres.sort(key=lambda r: r.date_heure, reverse=True)
+
+    ordonnes = ([prochain] if prochain else []) + autres
+
+    # Découpage par page
+    page_num = max(1, int(page))
+    debut = (page_num - 1) * par_page
+    fin = debut + par_page
+    page_elements = ordonnes[debut:fin]
+
+    return {
+        "page": page_num,
+        "parPage": par_page,
+        "total": len(ordonnes),
+        "rendezVous": [
+            {
+                "id": r.id,
+                "npi": r.npi,
+                "service": r.service,
+                "dateHeure": r.date_heure.strftime("%d/%m/%Y %H:%M"),
+                "dateHeureIso": r.date_heure.strftime("%Y-%m-%dT%H:%M"),
+                "statut": r.statut,
+            }
+            for r in page_elements
+        ],
+    }

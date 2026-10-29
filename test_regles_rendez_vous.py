@@ -295,3 +295,189 @@ class TestTMA107ConformeUnSeulRendezVousAVenir(OutilsTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTMA104Annulation(OutilsTest):
+    """TMA-104 : l'annulation du rendez-vous n° 709 le 17/11 à 18:00 pour le 19/11 à 10:00
+    doit être acceptée (délai de 40 heures >= 24 heures)."""
+
+    DATE_RDV = "2026-11-19 10:00"
+
+    def rdv_709(self, statut="confirme"):
+        return rv(709, "0339205992", "PERMIS", self.DATE_RDV, statut)
+
+    def test_trace_du_ticket_annulation_40h_avant_acceptee(self):
+        maint = dt("2026-11-17 18:00")
+        res = R.controler_annulation(self.rdv_709(), maint)
+        self.assertAccepte(res)
+        self.assertEqual(res.code, 200)
+
+    def test_annulation_a_exactement_24h_acceptee(self):
+        # 18/11 à 10:00 pour le 19/11 à 10:00 = 24h pile (« jusqu'à 24 h avant »)
+        maint = dt("2026-11-18 10:00")
+        res = R.controler_annulation(self.rdv_709(), maint)
+        self.assertAccepte(res)
+
+    def test_annulation_a_23h59_refusee(self):
+        # 18/11 à 10:01 = moins de 24h
+        maint = dt("2026-11-18 10:01")
+        res = R.controler_annulation(self.rdv_709(), maint)
+        self.assertRefus(
+            res, 409, "Annulation impossible moins de 24 h avant le rendez-vous."
+        )
+
+    def test_annulation_le_jour_meme_refusee(self):
+        maint = dt("2026-11-19 08:00")
+        res = R.controler_annulation(self.rdv_709(), maint)
+        self.assertRefus(res, 409, R.MSG_ANNULATION_TARDIVE)
+
+    def test_annulation_rendez_vous_deja_annule_refusee(self):
+        res = R.controler_annulation(self.rdv_709(statut="annule"), dt("2026-11-17 18:00"))
+        self.assertRefus(res, 409, "Ce rendez-vous ne peut plus être annulé.")
+
+    def test_annulation_rendez_vous_deja_honore_ou_absent_refusee(self):
+        for statut in ("honore", "absent"):
+            with self.subTest(statut=statut):
+                res = R.controler_annulation(self.rdv_709(statut=statut), dt("2026-11-17 18:00"))
+                self.assertRefus(res, 409, R.MSG_NON_ANNULABLE)
+
+
+class TestTMA105StatutsDefinitifs(OutilsTest):
+    """TMA-105 : un rendez-vous au statut annule, honore ou absent ne peut plus changer."""
+
+    def rdv_292(self, statut="annule"):
+        return rv(292, "0330677555", "PASSEPORT", "2026-11-12 10:00", statut)
+
+    def test_trace_du_ticket_passage_de_annule_a_honore_refuse(self):
+        res = R.controler_changement_statut(self.rdv_292("annule"), "honore")
+        self.assertRefus(res, 409, "Ce rendez-vous est déjà clôturé.")
+
+    def test_passage_de_annule_a_absent_refuse(self):
+        res = R.controler_changement_statut(self.rdv_292("annule"), "absent")
+        self.assertRefus(res, 409, R.MSG_CLOTURE)
+
+    def test_passage_depuis_honore_ou_absent_refuse(self):
+        for statut_actuel in ("honore", "absent"):
+            for statut_cible in ("honore", "absent"):
+                with self.subTest(actuel=statut_actuel, cible=statut_cible):
+                    res = R.controler_changement_statut(self.rdv_292(statut_actuel), statut_cible)
+                    self.assertRefus(res, 409, R.MSG_CLOTURE)
+
+    def test_passage_depuis_confirme_accepte(self):
+        for statut_cible in ("honore", "absent"):
+            with self.subTest(cible=statut_cible):
+                res = R.controler_changement_statut(self.rdv_292("confirme"), statut_cible)
+                self.assertAccepte(res)
+
+    def test_statut_invalide_refuse(self):
+        invalides = ("confirme", "annule", "valide", "reporte", "", None, 12)
+        for statut in invalides:
+            with self.subTest(statut=repr(statut)):
+                res = R.controler_changement_statut(self.rdv_292("confirme"), statut)
+                self.assertRefus(res, 400, "Statut invalide : honore ou absent.")
+
+
+class TestTMA106TriEtPagination(OutilsTest):
+    """TMA-106 : les rendez-vous d'un usager doivent être listés du plus récent au plus ancien,
+    le prochain rendez-vous en tête, par pages de 10."""
+
+    NPI = "0203040506"
+    MAINT = EXPORT  # 2026-11-20 18:00
+
+    def treize_rendez_vous(self):
+        # Les 13 rendez-vous réels de cet usager dans base_rendez_vous.sql :
+        return [
+            rv(1, self.NPI, "PASSEPORT", "2026-01-05 08:30", "honore"),
+            rv(2, self.NPI, "CNI", "2026-02-12 10:00", "honore"),
+            rv(3, self.NPI, "PERMIS", "2026-03-03 14:30", "absent"),
+            rv(4, self.NPI, "PASSEPORT", "2026-04-21 09:00", "honore"),
+            rv(5, self.NPI, "CNI", "2026-05-08 11:30", "honore"),
+            rv(6, self.NPI, "PERMIS", "2026-05-19 15:00", "absent"),
+            rv(7, self.NPI, "PASSEPORT", "2026-06-02 08:00", "honore"),
+            rv(8, self.NPI, "CNI", "2026-06-16 13:30", "honore"),
+            rv(9, self.NPI, "PERMIS", "2026-07-07 10:30", "honore"),
+            rv(10, self.NPI, "PASSEPORT", "2026-07-28 09:30", "absent"),
+            rv(11, self.NPI, "CNI", "2026-08-11 14:00", "honore"),
+            rv(259, self.NPI, "PERMIS", "2026-09-25 11:00", "honore"),
+            rv(826, self.NPI, "PASSEPORT", "2026-12-02 08:30", "confirme"),
+        ]
+
+    def test_trace_du_ticket_prochain_rendez_vous_en_premiere_position(self):
+        page1 = R.lister_rendez_vous(self.treize_rendez_vous(), page=1, maintenant=self.MAINT)
+        self.assertEqual(page1["page"], 1)
+        self.assertEqual(page1["parPage"], 10)
+        self.assertEqual(page1["total"], 13)
+        self.assertEqual(len(page1["rendezVous"]), 10)
+
+        # Le rendez-vous du 2 décembre doit être en tête absolue de la liste :
+        premier = page1["rendezVous"][0]
+        self.assertEqual(premier["id"], 826)
+        self.assertEqual(premier["dateHeure"], "02/12/2026 08:30")
+        self.assertEqual(premier["statut"], "confirme")
+
+    def test_ordre_chronologique_decroissant_des_rendez_vous_passes(self):
+        page1 = R.lister_rendez_vous(self.treize_rendez_vous(), page=1, maintenant=self.MAINT)
+        dates_obtenues = [r["dateHeure"] for r in page1["rendezVous"]]
+
+        # 02/12 en tête (prochain), puis ordre décroissant réel :
+        dates_attendues = [
+            "02/12/2026 08:30",  # prochain RDV en tête
+            "25/09/2026 11:00",
+            "11/08/2026 14:00",
+            "28/07/2026 09:30",
+            "07/07/2026 10:30",
+            "16/06/2026 13:30",
+            "02/06/2026 08:00",
+            "19/05/2026 15:00",
+            "08/05/2026 11:30",
+            "21/04/2026 09:00",
+        ]
+        self.assertEqual(dates_obtenues, dates_attendues)
+
+    def test_deuxieme_page(self):
+        page2 = R.lister_rendez_vous(self.treize_rendez_vous(), page=2, maintenant=self.MAINT)
+        self.assertEqual(page2["page"], 2)
+        self.assertEqual(page2["total"], 13)
+        self.assertEqual(len(page2["rendezVous"]), 3)
+        dates_page2 = [r["dateHeure"] for r in page2["rendezVous"]]
+        self.assertEqual(
+            dates_page2,
+            ["03/03/2026 14:30", "12/02/2026 10:00", "05/01/2026 08:30"],
+        )
+
+    def test_sans_perte_ni_doublon_sur_l_ensemble_des_pages(self):
+        p1 = R.lister_rendez_vous(self.treize_rendez_vous(), page=1, maintenant=self.MAINT)["rendezVous"]
+        p2 = R.lister_rendez_vous(self.treize_rendez_vous(), page=2, maintenant=self.MAINT)["rendezVous"]
+        tous_ids = [r["id"] for r in p1 + p2]
+        self.assertEqual(len(tous_ids), 13)
+        self.assertEqual(len(set(tous_ids)), 13)
+
+
+class TestRobusteEtFuzzing(OutilsTest):
+    """Vérifie que le module gère toutes les entrées hostiles sans jamais lever d'exception."""
+
+    def test_fuzzing_prise_aucun_crash(self):
+        entrées_hostiles = [
+            None, "", " ", "1", "abc", 0, -1, 99999999999999999999,
+            {"a": 1}, ["x"], (1, 2), "\x00\xff", "🔥🚀", "NaN", "null",
+        ]
+        for e1 in entrées_hostiles[:6]:
+            for e2 in entrées_hostiles[:4]:
+                for e3 in entrées_hostiles[:4]:
+                    res = R.controler_prise(e1, e2, e3, [], EXPORT)
+                    self.assertIsInstance(res, R.Resultat)
+                    self.assertIn(res.code, (400, 409))
+
+    def test_fuzzing_annulation_aucun_crash(self):
+        for h in (None, {}, {"id": 1}, "texte", 42, []):
+            try:
+                res = R.controler_annulation(h, EXPORT)
+                self.assertIsInstance(res, R.Resultat)
+            except Exception as e:
+                self.fail(f"Exception levée sur {h!r} : {e}")
+
+    def test_fuzzing_statut_aucun_crash(self):
+        for h in (None, {}, {"id": 1, "statut": "confirme"}, "x"):
+            for s in (None, "honore", "autre", 12):
+                res = R.controler_changement_statut(h, s)
+                self.assertIsInstance(res, R.Resultat)
